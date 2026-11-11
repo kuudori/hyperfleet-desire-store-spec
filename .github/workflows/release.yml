@@ -51,7 +51,7 @@ jobs:
 
       - name: Build Desire Store schema
         if: steps.check_tag.outputs.skip == 'false'
-        run: ./build-schema.sh
+        run: make generate
 
       - name: Prepare release assets
         if: steps.check_tag.outputs.skip == 'false'

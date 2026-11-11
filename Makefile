@@ -12,7 +12,9 @@ node_modules: package.json package-lock.json
 
 .PHONY: generate
 generate: node_modules ## Compile main.tsp into schemas/desire-store/openapi.yaml
-	./build-schema.sh
+	node_modules/.bin/tsp compile main.tsp --output-dir tsp-output
+	mv tsp-output/schema/openapi.yaml $(SCHEMA)
+	rm -rf tsp-output
 
 .PHONY: build
 build: generate ## Generate the schema and build the Go module
@@ -24,7 +26,7 @@ lint: node_modules ## Lint the OpenAPI schema with Spectral and the Go code with
 	go vet ./...
 
 .PHONY: test
-test: ## Run the Go tests with coverage
+test: ## Run the Go tests with coverage (none yet)
 	go test -cover ./...
 
 .PHONY: verify-schema
@@ -41,4 +43,4 @@ install-hooks: ## Install the pre-commit and commit-msg hooks
 
 .PHONY: clean
 clean: ## Remove TypeSpec build output
-	rm -rf tsp-output tsp-output-*
+	rm -rf tsp-output

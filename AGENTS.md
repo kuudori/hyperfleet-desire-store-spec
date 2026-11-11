@@ -21,7 +21,7 @@ make verify-schema   # fail when the committed schema differs from the sources
 **DO NOT:**
 
 - Edit `schemas/desire-store/openapi.yaml` by hand. Change the `.tsp` sources and regenerate.
-- Commit `node_modules/` or `tsp-output-*` directories.
+- Commit `node_modules/` or the `tsp-output/` directory.
 - Import the `hyperfleet` package from `hyperfleet-api-spec`. The Desire Store contract is independent of the cluster API.
 
 **DO:**

@@ -21,7 +21,7 @@ repos:
     hooks:
       - id: build-and-lint-schema
         name: Build and lint OpenAPI schema
-        entry: bash -c './build-schema.sh && npx spectral lint schemas/desire-store/openapi.yaml --fail-severity warn'
+        entry: bash -c 'make generate && npx spectral lint schemas/desire-store/openapi.yaml --fail-severity warn'
         language: system
         files: \.tsp$
         pass_filenames: false

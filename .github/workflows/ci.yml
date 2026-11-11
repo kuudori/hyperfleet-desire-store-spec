@@ -48,11 +48,9 @@ jobs:
       - name: Check schema consistency
         run: make verify-schema
 
-      - name: Lint
-        run: make lint
-
-      - name: Test
-        run: make test
+      # The pre-commit hook above already built and Spectral-linted the schema.
+      - name: Vet Go code
+        run: go vet ./...
 
       # Pull requests only: on a push to main, release.yml tags the same
       # version concurrently, so this check would race the new tag.

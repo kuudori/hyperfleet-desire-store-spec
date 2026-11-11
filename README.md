@@ -12,7 +12,6 @@ The repository started from [hyperfleet-api-spec-template](https://github.com/op
 hyperfleet-desire-store-spec/
 ├── main.tsp                      # TypeSpec entry point: service, version, route prefix
 ├── tspconfig.yaml                # TypeSpec compiler configuration
-├── build-schema.sh               # Compiles main.tsp into schemas/desire-store/openapi.yaml
 ├── schemas/
 │   ├── desire-store/openapi.yaml # Generated OpenAPI 3.0 contract (committed)
 │   └── schemas.go                # Go package that embeds the generated contract
