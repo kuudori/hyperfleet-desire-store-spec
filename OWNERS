@@ -1,5 +1,6 @@
 approvers:
 - contracts-owners
+- tech-leads
 reviewers:
 - contracts-reviewers
 - contracts-owners

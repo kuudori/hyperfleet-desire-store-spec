@@ -26,32 +26,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Desire Store schema
-        run: ./build-schema.sh
-
-      - name: Check schema consistency
-        run: |
-          if ! git diff --exit-code schemas/; then
-            echo "Committed schemas are out of sync with TypeSpec sources."
-            echo "Run './build-schema.sh' and commit the results."
-            exit 1
-          fi
-
-      - name: Lint OpenAPI schema
-        run: |
-          npx spectral lint schemas/desire-store/openapi.yaml --format github-actions --fail-severity warn
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - name: Build and test Go module
-        run: |
-          go vet ./...
-          go test ./...
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
 
+      - name: Run pre-commit hooks
+        run: |
+          pip install pre-commit==4.7.0
+          pre-commit run --all-files --show-diff-on-failure
+
+      - name: Check schema consistency
+        run: make verify-schema
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      # Pull requests only: on a push to main, release.yml tags the same
+      # version concurrently, so this check would race the new tag.
       - name: Check for contract changes
+        if: github.event_name == 'pull_request'
         id: contract
         run: |
           BASE_REF="${{ github.event.pull_request.base.sha || github.event.before }}"
@@ -68,7 +70,7 @@ jobs:
           fi
 
       - name: Check version bump
-        if: steps.contract.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' && steps.contract.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

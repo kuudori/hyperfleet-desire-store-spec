@@ -16,7 +16,9 @@ hyperfleet-desire-store-spec/
 ├── schemas/
 │   ├── desire-store/openapi.yaml # Generated OpenAPI 3.0 contract (committed)
 │   └── schemas.go                # Go package that embeds the generated contract
-└── Makefile                      # help, generate, build, lint, test, verify-schema, clean
+├── .hyperfleet.yaml              # Repository type for HyperFleet tooling
+├── OWNERS, OWNERS_ALIASES        # Generated from owners.yaml in the architecture repo
+└── Makefile                      # help, generate, build, lint, test, verify-schema, install-hooks, clean
 ```
 
 ## Using the contract from Go

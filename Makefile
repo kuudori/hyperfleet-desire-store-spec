@@ -11,7 +11,7 @@ node_modules: package.json package-lock.json
 	@touch node_modules
 
 .PHONY: generate
-generate: node_modules ## Compile main.tsp into $(SCHEMA)
+generate: node_modules ## Compile main.tsp into schemas/desire-store/openapi.yaml
 	./build-schema.sh
 
 .PHONY: build
@@ -24,12 +24,16 @@ lint: node_modules ## Lint the OpenAPI schema with Spectral and the Go code with
 	go vet ./...
 
 .PHONY: test
-test: ## Run the Go tests
-	go test ./...
+test: ## Run the Go tests with coverage
+	go test -cover ./...
 
 .PHONY: verify-schema
 verify-schema: generate ## Fail when the committed schema differs from the TypeSpec sources
-	git diff --exit-code -- schemas/
+	@if [ -n "$$(git status --porcelain -- schemas/)" ]; then \
+		git status --porcelain -- schemas/; \
+		echo "The committed schema is out of date. Run 'make generate' and commit the result."; \
+		exit 1; \
+	fi
 
 .PHONY: install-hooks
 install-hooks: ## Install the pre-commit and commit-msg hooks
