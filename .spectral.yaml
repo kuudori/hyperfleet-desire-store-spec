@@ -1,0 +1,6 @@
+extends: ["spectral:oas"]
+rules:
+  # The gateway hostname differs per caller class and per partition (Desire Store
+  # detailed design, AuthConfig Structure and Reconciliation), so the contract
+  # names no fixed server.
+  oas3-api-servers: off

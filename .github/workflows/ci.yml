@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      # LeakTK scans staged changes, so it has nothing to scan in CI, and its
+      # source build needs btrfs headers the runner does not have.
+      - name: Run pre-commit hooks
+        env:
+          SKIP: leaktk.git.pre-commit
+        run: |
+          pip install pre-commit==4.7.0
+          pre-commit run --all-files --show-diff-on-failure
+
+      - name: Check schema consistency
+        run: make verify-schema
+
+      # The pre-commit hook above already built and Spectral-linted the schema.
+      - name: Vet Go code
+        run: go vet ./...
+
+      # Pull requests only: on a push to main, release.yml tags the same
+      # version concurrently, so this check would race the new tag.
+      - name: Check for contract changes
+        if: github.event_name == 'pull_request'
+        id: contract
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE_REF" ] || ! git cat-file -e "$BASE_REF" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE_REF" HEAD -- '*.tsp')
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No contract files changed, skipping version bump check"
+          fi
+
+      - name: Check version bump
+        if: github.event_name == 'pull_request' && steps.contract.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT=$(grep -oP '(?<=version: ")[^"]+' main.tsp)
+          if [ -z "$CURRENT" ]; then
+            echo "::error::Failed to extract version from main.tsp — check the @info decorator format" >&2
+            exit 1
+          fi
+          LATEST=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null | sed 's/^v//' || echo "")
+          if [ -z "$LATEST" ]; then
+            echo "No previous releases found — version check skipped"
+            exit 0
+          fi
+          HIGHEST=$(printf '%s\n%s\n' "$CURRENT" "$LATEST" | sort -V | tail -1)
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "::error::Version '$CURRENT' matches latest release tag 'v$LATEST' — bump the version in main.tsp before merging."
+            exit 1
+          elif [ "$HIGHEST" != "$CURRENT" ]; then
+            echo "::error::Version '$CURRENT' is lower than latest release 'v$LATEST' — version in main.tsp must be strictly greater."
+            exit 1
+          fi
+          echo "Version bump OK: $LATEST → $CURRENT"
