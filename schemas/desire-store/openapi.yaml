@@ -1,0 +1,19 @@
+openapi: 3.0.0
+info:
+  title: HyperFleet Desire Store API
+  version: 0.1.0
+  contact:
+    name: HyperFleet Team
+    url: https://github.com/openshift-hyperfleet
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  description: |-
+    HyperFleet Desire Store API transports desires (apply, delete, read) from
+    Adapters to Appliers.
+
+    The routes, wire schemas, and error responses come from the Desire Store
+    detailed design in the architecture repository.
+tags: []
+paths: {}
+components: {}
