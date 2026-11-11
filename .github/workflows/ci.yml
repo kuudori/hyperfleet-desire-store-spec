@@ -36,7 +36,11 @@ jobs:
         with:
           python-version: '3.13'
 
+      # LeakTK scans staged changes, so it has nothing to scan in CI, and its
+      # source build needs btrfs headers the runner does not have.
       - name: Run pre-commit hooks
+        env:
+          SKIP: leaktk.git.pre-commit
         run: |
           pip install pre-commit==4.7.0
           pre-commit run --all-files --show-diff-on-failure
