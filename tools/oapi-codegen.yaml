@@ -1,0 +1,13 @@
+# oapi-codegen settings for the generated-types check (make check-types).
+# They match the settings that hyperfleet-api uses for its generated types.
+package: typecheck
+output: typecheck/desirestore.gen.go
+generate:
+  models: true
+  client: true
+  embedded-spec: true
+output-options:
+  skip-prune: false
+compatibility:
+  old-merge-schemas: true
+  old-aliasing: true

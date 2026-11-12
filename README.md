@@ -10,14 +10,17 @@ The repository started from [hyperfleet-api-spec-template](https://github.com/op
 
 ```text
 hyperfleet-desire-store-spec/
-├── main.tsp                      # TypeSpec entry point: service, version, route prefix
+├── main.tsp                      # TypeSpec entry point: service, version, authentication, compatibility
+├── models/                       # Desire wire schemas and RFC 9457 problem responses
+├── services/                     # The five desire operations
 ├── tspconfig.yaml                # TypeSpec compiler configuration
 ├── schemas/
 │   ├── desire-store/openapi.yaml # Generated OpenAPI 3.0 contract (committed)
 │   └── schemas.go                # Go package that embeds the generated contract
+├── tools/                        # Separate Go module: oapi-codegen pin and the generated-types check
 ├── .hyperfleet.yaml              # Repository type for HyperFleet tooling
 ├── OWNERS, OWNERS_ALIASES        # Generated from owners.yaml in the architecture repo
-└── Makefile                      # help, generate, build, lint, test, verify-schema, install-hooks, clean
+└── Makefile                      # help, generate, build, lint, test, verify-schema, check-types, install-hooks, clean
 ```
 
 ## Using the contract from Go
@@ -28,9 +31,11 @@ import dsschemas "github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/s
 data, err := dsschemas.FS.ReadFile("desire-store/openapi.yaml")
 ```
 
-Consumers generate their own types and clients from this file with `oapi-codegen`, as the HyperFleet API does with `hyperfleet-api-spec`.
+Consumers generate their own types and clients from this file with `oapi-codegen`, as the HyperFleet API does with `hyperfleet-api-spec`. `tools/oapi-codegen.yaml` holds the generator settings that `make check-types` builds against. The generated code is not committed.
 
 ## Development
+
+Go 1.26.0 or later is required, and `make check-types` downloads `oapi-codegen` from the Go module proxy.
 
 ```bash
 npm install         # TypeSpec compiler and Spectral
@@ -38,6 +43,7 @@ make generate       # Compile main.tsp into schemas/desire-store/openapi.yaml
 make lint           # Spectral lint at --fail-severity warn, then go vet
 make test           # Go tests
 make verify-schema  # Fail when the committed schema is out of date
+make check-types    # Generate Go types and a client with oapi-codegen and build them
 make install-hooks  # pre-commit and commit-msg hooks
 ```
 

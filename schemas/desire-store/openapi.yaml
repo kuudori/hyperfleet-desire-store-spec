@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: HyperFleet Desire Store API
-  version: 0.1.0
+  version: 0.2.0
   contact:
     name: HyperFleet Team
     url: https://github.com/openshift-hyperfleet
@@ -10,10 +10,1343 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0
   description: |-
     HyperFleet Desire Store API transports desires (apply, delete, read) from
-    Adapters to Appliers.
+    Adapters to Appliers. A caller sends a bearer token for its service account
+    to the gateway. The gateway validates it and passes the caller's identity
+    and authorized partition to the API. The API never takes them from request
+    fields.
 
-    The routes, wire schemas, and error responses come from the Desire Store
-    detailed design in the architecture repository.
-tags: []
-paths: {}
-components: {}
+    | Operation | Callers |
+    |-----------|---------|
+    | List desires, Get desire | Adapter, remote Applier, sweeper |
+    | Write desire | Adapter; sweeper for DeleteDesire only |
+    | Write status | Remote Applier |
+    | Delete desire | Adapter, sweeper |
+
+    Other calls return 403. Errors are RFC 9457 problem details with a
+    `HYPERFLEET-CAT-NUM` code. Do not retry 400, 401, 403, or 422 unchanged.
+    For a 409, follow the client action in `ConflictProblem`. Retry 503,
+    timeouts, and network failures with capped exponential backoff and jitter,
+    and wait for `Retry-After` on 429.
+
+    **v1 compatibility.**
+
+    - Supported v1 Appliers must continue working when the API is deployed
+    independently.
+    - Operation behavior and authorization rules remain stable in v1.
+    - Optional additive request and response fields are compatible within v1.
+    - Changes to required fields, operation behavior, authorization,
+    compare-and-swap, or idempotency require a new API version.
+tags:
+  - name: Desires
+paths:
+  /api/hyperfleet/desire-store/v1/partitions/{partition}/desires:
+    get:
+      operationId: listDesires
+      summary: List desires
+      description: |-
+        Lists the references of the desires in a partition, one page at a time.
+        Get serves the full record of each desire.
+
+        Pages use an opaque keyset cursor and carry no total count. A multi-page
+        read is not a consistent snapshot: a desire that changes during the read
+        can show up only on the next list. A client must not treat an incomplete
+        or failed list as an empty partition.
+      parameters:
+        - $ref: '#/components/parameters/PartitionPath'
+        - name: type
+          in: query
+          required: false
+          description: Return only desires of this type. Omitted returns all types.
+          schema:
+            $ref: '#/components/schemas/DesireType'
+          explode: false
+        - name: cursor
+          in: query
+          required: false
+          description: The `next_cursor` of the previous page. Omitted returns the first page.
+          schema:
+            type: string
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          description: |-
+            The maximum number of references on the page. A value above the maximum
+            returns 400 and is not clamped.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 1000
+            default: 100
+          explode: false
+      responses:
+        '200':
+          description: The desire list page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesireList'
+        '400':
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequestProblem'
+        '401':
+          description: The credential is missing, invalid, or expired. A 401 from the API has this body. A 401 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedProblem'
+        '403':
+          description: The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. A 403 from the API has this body. A 403 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenProblem'
+        '429':
+          description: Rate limited. Honor the `Retry-After` header before retrying.
+          headers:
+            Retry-After:
+              required: true
+              description: 'Delay before the client retries: delay-seconds or an HTTP date (RFC 9110).'
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RateLimitProblem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/InternalErrorProblem'
+        '503':
+          description: The API is degraded. Retry with capped exponential backoff and jitter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableProblem'
+        default:
+          description: An unexpected error response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Desires
+      security:
+        - BearerAuth: []
+  /api/hyperfleet/desire-store/v1/partitions/{partition}/desires/{desire-id}:
+    get:
+      operationId: getDesire
+      summary: Get desire
+      description: Gets one desire with its full record.
+      parameters:
+        - $ref: '#/components/parameters/PartitionPath'
+        - $ref: '#/components/parameters/DesireIdPath'
+      responses:
+        '200':
+          description: The desire.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Desire'
+              examples:
+                ReadDesire:
+                  summary: ReadDesire
+                  value:
+                    id: read:apps:deployments:kube-system:coredns
+                    type: read
+                    group: apps
+                    resource: deployments
+                    namespace: kube-system
+                    name: coredns
+                    owner: system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter
+                    resource_id: clusters/cls-123
+                    target_version: v1
+                    status:
+                      kubeContent:
+                        apiVersion: apps/v1
+                        kind: Deployment
+                        metadata:
+                          name: coredns
+                          namespace: kube-system
+                    generation: 1
+                    version: 1
+                ApplyDesire:
+                  summary: ApplyDesire
+                  value:
+                    id: apply:apps:deployments:kube-system:coredns
+                    type: apply
+                    group: apps
+                    resource: deployments
+                    namespace: kube-system
+                    name: coredns
+                    owner: system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter
+                    resource_id: clusters/cls-123
+                    kubeContent:
+                      apiVersion: apps/v1
+                      kind: Deployment
+                      metadata:
+                        name: coredns
+                        namespace: kube-system
+                    generation: 2
+                    version: 3
+        '400':
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequestProblem'
+        '401':
+          description: The credential is missing, invalid, or expired. A 401 from the API has this body. A 401 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedProblem'
+        '403':
+          description: The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. A 403 from the API has this body. A 403 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenProblem'
+        '404':
+          description: The desire is absent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/NotFoundProblem'
+        '429':
+          description: Rate limited. Honor the `Retry-After` header before retrying.
+          headers:
+            Retry-After:
+              required: true
+              description: 'Delay before the client retries: delay-seconds or an HTTP date (RFC 9110).'
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RateLimitProblem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/InternalErrorProblem'
+        '503':
+          description: The API is degraded. Retry with capped exponential backoff and jitter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableProblem'
+        default:
+          description: An unexpected error response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Desires
+      security:
+        - BearerAuth: []
+    put:
+      operationId: writeDesire
+      summary: Write desire
+      description: |-
+        Creates or updates a desire. The path is the only source of its identity.
+
+        **Create and update.** A create returns 201, or 409 `HYPERFLEET-CNF-001`
+        when the caller already has the desire. An ApplyDesire update succeeds
+        only at the stored version: it increases the version and returns 200. A
+        stale version returns 409 `HYPERFLEET-CNF-002`, and an update of an absent
+        ApplyDesire returns 404. ReadDesire and DeleteDesire have no update. See
+        `DesireWrite.version`.
+
+        **Owner.** All desires for one Kubernetes object in one partition have the
+        same `owner`: the caller that created the first of them. While one of them
+        exists, a create, write, or delete by a different caller returns 409
+        `HYPERFLEET-CNF-004`. Only the sweeper is exempt from this check. A
+        DeleteDesire that the sweeper creates is owned by the sweeper. It is the
+        one exception to the single `owner`, until the Applier confirms the
+        deletion and the sweeper removes it.
+
+        **Delete supersedes apply.** Creating a DeleteDesire atomically removes
+        the ApplyDesire for the same object at any version and returns 201. An
+        in-flight update or status write to that ApplyDesire then returns 404. The
+        ReadDesire for the object does not change. A second DeleteDesire create
+        returns 409 `HYPERFLEET-CNF-001`. An ApplyDesire create returns 409
+        `HYPERFLEET-CNF-003` until the Applier confirms the delete, and then
+        replaces the DeleteDesire.
+
+        **Timed-out writes.** The client reads the desire. When it already shows
+        the change, the write succeeded. Otherwise the client re-evaluates and
+        retries.
+      parameters:
+        - $ref: '#/components/parameters/PartitionPath'
+        - $ref: '#/components/parameters/DesireIdPath'
+      responses:
+        '200':
+          description: The desire.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Desire'
+        '201':
+          description: The desire was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Desire'
+        '400':
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequestProblem'
+        '401':
+          description: The credential is missing, invalid, or expired. A 401 from the API has this body. A 401 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedProblem'
+        '403':
+          description: The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. A 403 from the API has this body. A 403 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenProblem'
+        '404':
+          description: The desire is absent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/NotFoundProblem'
+        '409':
+          description: One of four conflicts. The `code` field tells which one; see `ConflictProblem`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConflictProblem'
+        '422':
+          description: Well-formed JSON that fails semantic validation, such as `kubeContent` whose Kubernetes identity does not match the path.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/UnprocessableProblem'
+        '429':
+          description: Rate limited. Honor the `Retry-After` header before retrying.
+          headers:
+            Retry-After:
+              required: true
+              description: 'Delay before the client retries: delay-seconds or an HTTP date (RFC 9110).'
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RateLimitProblem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/InternalErrorProblem'
+        '503':
+          description: The API is degraded. Retry with capped exponential backoff and jitter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableProblem'
+        default:
+          description: An unexpected error response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Desires
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DesireWrite'
+      security:
+        - BearerAuth: []
+    delete:
+      operationId: deleteDesire
+      summary: Delete desire
+      description: |-
+        Deletes a desire at its current version and returns 204. A stale version
+        returns 409 `HYPERFLEET-CNF-002`, a desire that a different caller owns
+        returns 409 `HYPERFLEET-CNF-004`, and an absent desire returns 404. Only
+        the sweeper is exempt from the owner check. To remove an applied object,
+        the Adapter creates a DeleteDesire instead.
+
+        **Timed-out delete recovery.** The client reads the desire:
+
+        - Absent: the delete succeeded.
+        - Present at the same version: the client retries the delete.
+        - Present at a different version: the desire changed or was created
+        again. The client does not retry and re-evaluates instead.
+
+        An Adapter can also retry the delete directly. A 404 then means success.
+
+        Versions restart at 1 when a desire is created again, so a retried delete
+        can remove a new record at the same version. The sweeper retries only
+        when the stored `owner` is still its own identity.
+      parameters:
+        - $ref: '#/components/parameters/PartitionPath'
+        - $ref: '#/components/parameters/DesireIdPath'
+        - name: version
+          in: query
+          required: true
+          description: The current version of the desire.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+          explode: false
+      responses:
+        '204':
+          description: Success, with no body.
+        '400':
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequestProblem'
+        '401':
+          description: The credential is missing, invalid, or expired. A 401 from the API has this body. A 401 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedProblem'
+        '403':
+          description: The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. A 403 from the API has this body. A 403 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenProblem'
+        '404':
+          description: The desire is absent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/NotFoundProblem'
+        '409':
+          description: One of four conflicts. The `code` field tells which one; see `ConflictProblem`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConflictProblem'
+        '429':
+          description: Rate limited. Honor the `Retry-After` header before retrying.
+          headers:
+            Retry-After:
+              required: true
+              description: 'Delay before the client retries: delay-seconds or an HTTP date (RFC 9110).'
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RateLimitProblem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/InternalErrorProblem'
+        '503':
+          description: The API is degraded. Retry with capped exponential backoff and jitter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableProblem'
+        default:
+          description: An unexpected error response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Desires
+      security:
+        - BearerAuth: []
+  /api/hyperfleet/desire-store/v1/partitions/{partition}/desires/{desire-id}/status:
+    put:
+      operationId: writeDesireStatus
+      summary: Write status
+      description: |-
+        Writes the status of a desire and returns 204. It does not check the
+        `owner`, because the Applier writes status on desires that adapters own.
+
+        **ApplyDesire and DeleteDesire.** The write succeeds only at the stored
+        version, and it increments the version. A stale version returns 409
+        `HYPERFLEET-CNF-002`. A spec update and a status write share the version,
+        so a status computed for an older spec returns `HYPERFLEET-CNF-002`, and
+        so does an Adapter update that loses a race with a status write.
+        A retry of a status write that already succeeded also returns
+        `HYPERFLEET-CNF-002`. Versions restart at 1 when a desire is created
+        again, so a stale status write can match the new record.
+
+        **ReadDesire.** The write has no version check and does not change the
+        version. A late write can overwrite a newer status.
+
+        A status write to an ApplyDesire that a DeleteDesire superseded returns
+        404.
+      parameters:
+        - $ref: '#/components/parameters/PartitionPath'
+        - $ref: '#/components/parameters/DesireIdPath'
+      responses:
+        '204':
+          description: Success, with no body.
+        '400':
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BadRequestProblem'
+        '401':
+          description: The credential is missing, invalid, or expired. A 401 from the API has this body. A 401 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedProblem'
+        '403':
+          description: The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. A 403 from the API has this body. A 403 from the gateway has no body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenProblem'
+        '404':
+          description: The desire is absent.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/NotFoundProblem'
+        '409':
+          description: One of four conflicts. The `code` field tells which one; see `ConflictProblem`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ConflictProblem'
+        '429':
+          description: Rate limited. Honor the `Retry-After` header before retrying.
+          headers:
+            Retry-After:
+              required: true
+              description: 'Delay before the client retries: delay-seconds or an HTTP date (RFC 9110).'
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RateLimitProblem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/InternalErrorProblem'
+        '503':
+          description: The API is degraded. Retry with capped exponential backoff and jitter.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableProblem'
+        default:
+          description: An unexpected error response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      tags:
+        - Desires
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusWrite'
+      security:
+        - BearerAuth: []
+components:
+  parameters:
+    DesireIdPath:
+      name: desire-id
+      in: path
+      required: true
+      description: The desire identifier. See `DesireId` for the encoding.
+      schema:
+        $ref: '#/components/schemas/DesireId'
+    PartitionPath:
+      name: partition
+      in: path
+      required: true
+      description: |-
+        The partition that the request targets, which is the `managementCluster`
+        of the desire identity. A partition needs no setup: the first write to it
+        creates it.
+
+        - A remote Applier's path partition must equal the partition in its
+        binding. A mismatch returns 403.
+        - The Adapter and the sweeper may target any partition per request.
+      schema:
+        type: string
+  schemas:
+    BadRequestProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          description: Field-level validation errors, present on validation failures.
+      description: Problem body for a 400 response.
+      example:
+        type: https://api.hyperfleet.io/errors/validation-error
+        title: Validation Error
+        status: 400
+        detail: version is required
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires/apply:apps:deployments:kube-system:coredns
+        code: HYPERFLEET-VAL-001
+        timestamp: '2026-10-19T10:30:00.123Z'
+        trace_id: 4bf92f3577b34da6a3ce929d0e0e4736
+        errors:
+          - field: version
+            constraint: required
+            message: version is required
+    ConflictProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - code
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: |-
+            Machine-readable error code in `HYPERFLEET-CAT-NUM` format. The
+            `ConflictProblem` description lists the codes for a 409.
+        expected_version:
+          type: integer
+          format: int64
+          description: The version the request carried. Present on `HYPERFLEET-CNF-002`.
+        actual_version:
+          type: integer
+          format: int64
+          description: The version stored for the desire. Present on `HYPERFLEET-CNF-002`.
+      description: |-
+        RFC 9457 problem details for a 409 response. Each cause has its own `code`,
+        so a client tells a recoverable conflict from an ownership error without
+        parsing `detail`.
+
+        | Cause | Type | Code | Client action |
+        |-------|------|------|---------------|
+        | The version in a write, a status write, or a delete is not current | `version-conflict` | `HYPERFLEET-CNF-002` | Read the desire again. If the change is still necessary, retry with the current version |
+        | The caller creates a desire that it already has | `resource-conflict` | `HYPERFLEET-CNF-001` | Read the desire, then update it with its version |
+        | The caller creates an ApplyDesire while the DeleteDesire for the object is not confirmed | `resource-conflict` | `HYPERFLEET-CNF-003` | Retry after the Applier confirms the delete. The store then replaces the DeleteDesire with the new ApplyDesire |
+        | A different caller owns the object | `resource-conflict` | `HYPERFLEET-CNF-004` | Do not retry. No request from this caller changes the `owner` |
+
+        On a write or a delete, the store checks the version before the `owner`.
+        When both are wrong, the response is `HYPERFLEET-CNF-002`. The retry with
+        the current version then gets `HYPERFLEET-CNF-004`. Status writes do not
+        check the `owner`, so `HYPERFLEET-CNF-002` is the only conflict code that a
+        status write can get.
+      example:
+        type: https://api.hyperfleet.io/errors/version-conflict
+        title: Version Conflict
+        status: 409
+        detail: Desire was modified by another request. Expected version 3, found version 7.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires/apply:apps:deployments:kube-system:coredns
+        code: HYPERFLEET-CNF-002
+        timestamp: '2026-10-19T10:32:00.789Z'
+        trace_id: 6df92f3577b34da6a3ce929d0e0e4738
+        expected_version: 3
+        actual_version: 7
+    Desire:
+      type: object
+      required:
+        - id
+        - type
+        - group
+        - resource
+        - namespace
+        - name
+        - version
+        - owner
+        - resource_id
+        - generation
+      properties:
+        id:
+          $ref: '#/components/schemas/DesireId'
+        type:
+          $ref: '#/components/schemas/DesireType'
+        group:
+          type: string
+          description: The Kubernetes API group of the target object. Empty for the core group.
+        resource:
+          type: string
+          description: The plural resource name of the target object.
+        namespace:
+          type: string
+          description: The namespace of the target object. Empty for a cluster-scoped object.
+        name:
+          type: string
+          description: The name of the target object.
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |-
+            The compare-and-swap version of the record. It is 1 on create and
+            increases by 1 on every update and every ApplyDesire or DeleteDesire status
+            write. A ReadDesire status write does not change it. Versions restart at 1
+            for each record.
+        owner:
+          type: string
+          description: |-
+            The identity of the caller that wrote the desire: its service-account
+            subject, for example
+            `system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter`. The
+            API sets it from the authenticated caller, and clients never send it.
+            All desires for one Kubernetes object in one partition have the same
+            `owner`: the caller that created the first of them. A DeleteDesire that
+            the sweeper creates is the one exception, until the deletion is confirmed.
+        resource_id:
+          type: string
+          description: |-
+            The HyperFleet API resource that the desire comes from, for example
+            `clusters/cls-123`.
+        kubeContent:
+          type: object
+          additionalProperties: {}
+          description: |-
+            The rendered Kubernetes manifest of an ApplyDesire. Its Kubernetes
+            identity must match the path.
+        target_version:
+          type: string
+          description: |-
+            The Kubernetes API version to read the object as, for example `v1`.
+            Present on a ReadDesire.
+        status:
+          type: object
+          additionalProperties: {}
+          description: |-
+            The status that the Applier wrote. It holds Kubernetes conditions in
+            `conditions`. On a ReadDesire, `status.kubeContent` also holds the
+            mirrored live object.
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |-
+            The desire generation. The API sets it, and clients never send it. It is
+            1 on create and advances only when an ApplyDesire's `kubeContent`
+            changes. JSON whitespace and object-key order do not count as content
+            changes. It does not change on a status write. It is not the HyperFleet API
+            resource's generation or the Kubernetes `metadata.generation`. A
+            DeleteDesire and a ReadDesire have no update, so their `generation` stays
+            1.
+      description: |-
+        A desire, as Get returns it. Which optional fields appear depends on
+        `type`:
+
+        - ApplyDesire carries `kubeContent`.
+        - ReadDesire carries `target_version` and no top-level `kubeContent`. The
+        mirrored object is in `status.kubeContent`.
+        - DeleteDesire carries neither `kubeContent` nor `target_version`.
+    DesireId:
+      type: string
+      pattern: ^(apply|delete|read):[a-z0-9.-]*:[a-z0-9-]+:[a-z0-9-]*:([^/%.][^/%]*|[.][^/%.][^/%]*|[.][.][^/%]+)$
+      description: |-
+        The identifier of a desire: its identity fields joined by `:`, in the order
+        `type`, `group`, `resource`, `namespace`, `name`. An empty field is an empty
+        segment, so `apply:rbac.authorization.k8s.io:clusterroles::admin` names a
+        cluster-scoped object that has no namespace.
+
+        `type`, `group`, `resource`, and `namespace` are DNS names and cannot
+        contain colons. `name` comes last and may contain colons, for example the
+        built-in ClusterRoles named `system:controller:*`, so a decoder takes the
+        first four segments positionally and joins the remainder as the name. The
+        encoding is unambiguous and reversible. `name` follows Kubernetes
+        path-segment name validation: it is neither `.` nor `..` and contains
+        neither `/` nor `%`. The pattern also requires a non-empty `name`.
+
+        The sixth identity field, `managementCluster`, is the partition. It travels
+        in the route path and not in the identifier.
+      example: apply:apps:deployments:kube-system:coredns
+    DesireList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DesireReference'
+          description: The references on this page. Get serves the full record of each one.
+        next_cursor:
+          type: string
+          description: |-
+            An opaque cursor for the next page. Omitted on the last page. Pass it
+            unchanged as the `cursor` query parameter.
+      description: One page of desire references.
+    DesireReference:
+      type: object
+      required:
+        - type
+        - group
+        - resource
+        - namespace
+        - name
+        - version
+      properties:
+        type:
+          $ref: '#/components/schemas/DesireType'
+        group:
+          type: string
+          description: The Kubernetes API group of the target object. Empty for the core group.
+        resource:
+          type: string
+          description: The plural resource name of the target object.
+        namespace:
+          type: string
+          description: The namespace of the target object. Empty for a cluster-scoped object.
+        name:
+          type: string
+          description: The name of the target object.
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |-
+            The compare-and-swap version of the record. It is 1 on create and
+            increases by 1 on every update and every ApplyDesire or DeleteDesire status
+            write. A ReadDesire status write does not change it. Versions restart at 1
+            for each record.
+      description: |-
+        The fields that List returns for each desire: the identity fields and the
+        version. `type` is the kind of desire.
+    DesireType:
+      type: string
+      enum:
+        - apply
+        - delete
+        - read
+      description: The kind of desire.
+    DesireWrite:
+      type: object
+      required:
+        - resource_id
+      properties:
+        resource_id:
+          type: string
+          description: |-
+            The HyperFleet API resource that the desire comes from, for example
+            `clusters/cls-123`.
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |-
+            Omitted or 0 creates the desire. A non-zero value updates an ApplyDesire
+            at that version. ReadDesire and DeleteDesire have no update, so a
+            non-zero value on either returns 400.
+        kubeContent:
+          type: object
+          additionalProperties: {}
+          description: The rendered Kubernetes manifest. Required for an ApplyDesire.
+        target_version:
+          type: string
+          description: |-
+            The Kubernetes API version to read the object as, for example `v1`.
+            Required for a ReadDesire.
+      description: |-
+        The body of a Write desire request. It carries no identity or ownership
+        fields, and a body that includes `owner` returns 400.
+
+        - An ApplyDesire write also carries `kubeContent`.
+        - A ReadDesire write also requires `target_version`. A missing
+        `target_version` returns 400.
+        - A ReadDesire or DeleteDesire write has no `kubeContent` field.
+    ForbiddenProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+      description: Problem body for a 403 response that the API produces.
+      example:
+        type: https://api.hyperfleet.io/errors/permission-denied
+        title: Permission Denied
+        status: 403
+        detail: The caller class is not permitted to write desired state.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires/apply:apps:deployments:kube-system:coredns
+        code: HYPERFLEET-AUZ-001
+        timestamp: '2026-10-19T10:30:45.000Z'
+        trace_id: 4bf92f3577b34da6a3ce929d0e0e4738
+    InternalErrorProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+      description: Problem body for a 500 response.
+      example:
+        type: https://api.hyperfleet.io/errors/internal-error
+        title: Internal Error
+        status: 500
+        detail: An unexpected error occurred. Please try again later.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires
+        code: HYPERFLEET-INT-001
+        timestamp: '2026-10-19T10:34:00.345Z'
+        trace_id: 8ff92f3577b34da6a3ce929d0e0e4740
+    NotFoundProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+      description: Problem body for a 404 response.
+      example:
+        type: https://api.hyperfleet.io/errors/resource-not-found
+        title: Resource Not Found
+        status: 404
+        detail: Desire 'apply:apps:deployments:kube-system:coredns' not found.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires/apply:apps:deployments:kube-system:coredns
+        code: HYPERFLEET-NTF-001
+        timestamp: '2026-10-19T10:31:00.456Z'
+        trace_id: 5cf92f3577b34da6a3ce929d0e0e4737
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          description: Field-level validation errors, present on validation failures.
+      description: Problem body for a status code that an operation does not list.
+    RateLimitProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+      description: Problem body for a 429 response.
+      example:
+        type: https://api.hyperfleet.io/errors/rate-limit-exceeded
+        title: Rate Limit Exceeded
+        status: 429
+        detail: Too many requests. Retry after the delay in the Retry-After header.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires
+        code: HYPERFLEET-LMT-001
+        timestamp: '2026-10-19T10:33:00.012Z'
+        trace_id: 7ef92f3577b34da6a3ce929d0e0e4739
+    ServiceUnavailableProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+      description: Problem body for a 503 response.
+      example:
+        type: https://api.hyperfleet.io/errors/service-unavailable
+        title: Service Unavailable
+        status: 503
+        detail: The service is temporarily unavailable.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires
+        code: HYPERFLEET-SVC-001
+        timestamp: '2026-10-19T10:35:00.000Z'
+        trace_id: 8ff92f3577b34da6a3ce929d0e0e4741
+    StatusWrite:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: object
+          additionalProperties: {}
+          description: |-
+            The status object, with Kubernetes conditions in `conditions`. For a
+            ReadDesire, `status.kubeContent` also holds the mirrored live object.
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |-
+            The `version` that the Applier read with the desire. Required for an
+            ApplyDesire or DeleteDesire, and a missing value returns 400. A ReadDesire
+            status write carries no `version`.
+      description: The body of a Write status request.
+    UnauthorizedProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+      description: Problem body for a 401 response that the API produces.
+      example:
+        type: https://api.hyperfleet.io/errors/invalid-credentials
+        title: Invalid Credentials
+        status: 401
+        detail: The credential is missing, invalid, or expired.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires
+        code: HYPERFLEET-AUT-002
+        timestamp: '2026-10-19T10:30:30.000Z'
+        trace_id: 4bf92f3577b34da6a3ce929d0e0e4737
+    UnprocessableProblem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`.
+        title:
+          type: string
+          description: Short human-readable summary of the problem type.
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code of the response.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri-reference
+          description: 'URI reference for this occurrence: the request path.'
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 timestamp of when the error occurred.
+        trace_id:
+          type: string
+          description: Distributed trace ID for correlating the response with server logs.
+        code:
+          type: string
+          description: Machine-readable error code in `HYPERFLEET-CAT-NUM` format.
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          description: Field-level validation errors, present on validation failures.
+      description: Problem body for a 422 response.
+      example:
+        type: https://api.hyperfleet.io/errors/validation-error
+        title: Validation Error
+        status: 422
+        detail: kubeContent identifies a Deployment named 'other', but the path names 'coredns'.
+        instance: /api/hyperfleet/desire-store/v1/partitions/mc-01/desires/apply:apps:deployments:kube-system:coredns
+        code: HYPERFLEET-VAL-002
+        timestamp: '2026-10-19T10:32:30.000Z'
+        trace_id: 6df92f3577b34da6a3ce929d0e0e4739
+    ValidationError:
+      type: object
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+          description: Name of the request field, query parameter, or path parameter that failed validation.
+          example: version
+        value:
+          description: The invalid value that was provided, when it is safe to include.
+        constraint:
+          type: string
+          enum:
+            - required
+            - min
+            - max
+            - min_length
+            - max_length
+            - pattern
+            - enum
+            - format
+            - unique
+          description: The validation constraint that was violated.
+          example: required
+        message:
+          type: string
+          description: Human-readable error message for this field.
+          example: version is required
+      description: Field-level validation error detail.
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
