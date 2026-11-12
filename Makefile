@@ -29,6 +29,11 @@ lint: node_modules ## Lint the OpenAPI schema with Spectral and the Go code with
 test: ## Run the Go tests with coverage (none yet)
 	go test -cover ./...
 
+.PHONY: check-types
+check-types: generate ## Generate Go types and a client from the schema with oapi-codegen and build them
+	cd tools && go tool oapi-codegen --config oapi-codegen.yaml ../$(SCHEMA)
+	cd tools && go build ./typecheck/
+
 .PHONY: verify-schema
 verify-schema: generate ## Fail when the committed schema differs from the TypeSpec sources
 	@if [ -n "$$(git status --porcelain -- schemas/)" ]; then \

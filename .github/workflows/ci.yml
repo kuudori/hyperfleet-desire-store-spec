@@ -45,12 +45,13 @@ jobs:
           pip install pre-commit==4.7.0
           pre-commit run --all-files --show-diff-on-failure
 
-      - name: Check schema consistency
-        run: make verify-schema
-
-      # The pre-commit hook above already built and Spectral-linted the schema.
+      # The pre-commit hooks above already built and Spectral-linted the
+      # schema, and they fail when the build changes the committed schema.
       - name: Vet Go code
         run: go vet ./...
+
+      - name: Check generated Go types
+        run: make check-types
 
       # Pull requests only: on a push to main, release.yml tags the same
       # version concurrently, so this check would race the new tag.

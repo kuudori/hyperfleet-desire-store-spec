@@ -14,6 +14,7 @@ make generate        # compile main.tsp into schemas/desire-store/openapi.yaml
 make lint            # Spectral lint at --fail-severity warn, then go vet
 make test            # Go tests
 make verify-schema   # fail when the committed schema differs from the sources
+make check-types     # generate Go types and a client with oapi-codegen and build them
 ```
 
 ## Rules
