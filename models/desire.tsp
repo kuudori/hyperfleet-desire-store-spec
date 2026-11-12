@@ -41,14 +41,11 @@ scalar DesireId extends string;
 
 /**
  * The fields that List returns for each desire: the identity fields and the
- * version. `id` is the desire identifier as it appears in the route path, and
- * `type` is the kind of desire.
+ * version. `type` is the kind of desire.
  */
 model DesireReference {
-  // No property docs on `id` and `type`. With one, TypeSpec emits `allOf` and
-  // oapi-codegen v2.7.2 generates `Id struct{ DesireId }` instead of
-  // `Id DesireId`.
-  id: DesireId;
+  // No property doc on `type`. With one, TypeSpec emits `allOf` and
+  // oapi-codegen v2.7.2 generates a struct around `DesireType`.
   type: DesireType;
 
   /** The Kubernetes API group of the target object. Empty for the core group. */
@@ -83,6 +80,9 @@ model DesireReference {
  * - DeleteDesire carries neither `kubeContent` nor `target_version`.
  */
 model Desire {
+  // No property doc: see `DesireReference.type`.
+  id: DesireId;
+
   ...DesireReference;
 
   /**
@@ -91,12 +91,13 @@ model Desire {
    * `system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter`. The
    * API sets it from the authenticated caller, and clients never send it.
    * All desires for one Kubernetes object in one partition have the same
-   * `owner`: the caller that created the first of them.
+   * `owner`: the caller that created the first of them. A DeleteDesire that
+   * the sweeper creates is the one exception, until the deletion is confirmed.
    */
   owner: string;
 
   /**
-   * The HyperFleet resource that triggered the desire, for example
+   * The HyperFleet API resource that the desire comes from, for example
    * `clusters/cls-123`.
    */
   resource_id: string;
@@ -114,9 +115,9 @@ model Desire {
   target_version?: string;
 
   /**
-   * The status that the Applier wrote. Its shape is not part of this
-   * contract. On a ReadDesire, `status.kubeContent` holds the mirrored live
-   * object.
+   * The status that the Applier wrote. It holds Kubernetes conditions in
+   * `conditions`. On a ReadDesire, `status.kubeContent` also holds the
+   * mirrored live object.
    */
   status?: Record<unknown>;
 
@@ -158,7 +159,7 @@ model DesireList {
  */
 model DesireWrite {
   /**
-   * The HyperFleet resource that triggered the desire, for example
+   * The HyperFleet API resource that the desire comes from, for example
    * `clusters/cls-123`.
    */
   resource_id: string;
@@ -184,8 +185,8 @@ model DesireWrite {
 /** The body of a Write status request. */
 model StatusWrite {
   /**
-   * The status object. For a ReadDesire, `status.kubeContent` holds the
-   * mirrored live object.
+   * The status object, with Kubernetes conditions in `conditions`. For a
+   * ReadDesire, `status.kubeContent` also holds the mirrored live object.
    */
   status: Record<unknown>;
 

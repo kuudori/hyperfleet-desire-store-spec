@@ -27,6 +27,11 @@ model DesireCreatedResponse {
   @body body: Desire;
 }
 
+/** Success, with no body. */
+model NoContentSuccess {
+  @statusCode statusCode: 204;
+}
+
 /** Path parameters shared by every operation. */
 model PartitionPath {
   /**
@@ -82,12 +87,12 @@ interface Desires {
     @minValue(1)
     @maxValue(1000)
     limit?: int32 = 100,
-  ): DesireListResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse;
+  ): DesireListResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse | DefaultProblemResponse;
 
   /**
    * Gets one desire with its full record.
    */
-  @summary("Get a desire")
+  @summary("Get desire")
   @opExample(
     #{
       returnType: #{
@@ -134,7 +139,7 @@ interface Desires {
   @operationId("getDesire")
   @get
   @route("/{desire-id}")
-  getDesire(...PartitionPath, ...DesireIdPath): DesireOkResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse;
+  getDesire(...PartitionPath, ...DesireIdPath): DesireOkResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse | DefaultProblemResponse;
 
   /**
    * Creates or updates a desire. The path is the only source of its identity.
@@ -149,7 +154,10 @@ interface Desires {
    * **Owner.** All desires for one Kubernetes object in one partition have the
    * same `owner`: the caller that created the first of them. While one of them
    * exists, a create, write, or delete by a different caller returns 409
-   * `HYPERFLEET-CNF-004`. Only the sweeper is exempt from this check.
+   * `HYPERFLEET-CNF-004`. Only the sweeper is exempt from this check. A
+   * DeleteDesire that the sweeper creates is owned by the sweeper. It is the
+   * one exception to the single `owner`, until the Applier confirms the
+   * deletion and the sweeper removes it.
    *
    * **Delete supersedes apply.** Creating a DeleteDesire atomically removes
    * the ApplyDesire for the same object at any version and returns 201. An
@@ -163,7 +171,7 @@ interface Desires {
    * the change, the write succeeded. Otherwise the client re-evaluates and
    * retries.
    */
-  @summary("Create or update a desire")
+  @summary("Write desire")
   @operationId("writeDesire")
   @put
   @route("/{desire-id}")
@@ -171,7 +179,7 @@ interface Desires {
     ...PartitionPath,
     ...DesireIdPath,
     @body body: DesireWrite,
-  ): DesireCreatedResponse | DesireOkResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse;
+  ): DesireCreatedResponse | DesireOkResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse | DefaultProblemResponse;
 
   /**
    * Writes the status of a desire and returns 204. It does not check the
@@ -192,7 +200,7 @@ interface Desires {
    * A status write to an ApplyDesire that a DeleteDesire superseded returns
    * 404.
    */
-  @summary("Write the status of a desire")
+  @summary("Write status")
   @operationId("writeDesireStatus")
   @put
   @route("/{desire-id}/status")
@@ -200,7 +208,7 @@ interface Desires {
     ...PartitionPath,
     ...DesireIdPath,
     @body body: StatusWrite,
-  ): NoContentResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse;
+  ): NoContentSuccess | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse | DefaultProblemResponse;
 
   /**
    * Deletes a desire at its current version and returns 204. A stale version
@@ -222,7 +230,7 @@ interface Desires {
    * can remove a new record at the same version. The sweeper retries only
    * when the stored `owner` is still its own identity.
    */
-  @summary("Delete a desire")
+  @summary("Delete desire")
   @operationId("deleteDesire")
   @delete
   @route("/{desire-id}")
@@ -234,5 +242,5 @@ interface Desires {
     @query
     @minValue(1)
     version: int64,
-  ): NoContentResponse | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse;
+  ): NoContentSuccess | BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalServerErrorResponse | ServiceUnavailableResponse | DefaultProblemResponse;
 }

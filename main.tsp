@@ -11,16 +11,17 @@ using OpenAPI;
 
 /**
  * HyperFleet Desire Store API transports desires (apply, delete, read) from
- * Adapters to Appliers. A caller authenticates with a bearer token for its
- * service account, and the API takes the caller's identity and authorized
- * partition from it.
+ * Adapters to Appliers. A caller sends a bearer token for its service account
+ * to the gateway. The gateway validates it and passes the caller's identity
+ * and authorized partition to the API. The API never takes them from request
+ * fields.
  *
  * | Operation | Callers |
  * |-----------|---------|
- * | List desires, Get a desire | Adapter, remote Applier, sweeper |
- * | Create or update a desire | Adapter; sweeper for DeleteDesire only |
- * | Write the status of a desire | Remote Applier |
- * | Delete a desire | Adapter, sweeper |
+ * | List desires, Get desire | Adapter, remote Applier, sweeper |
+ * | Write desire | Adapter; sweeper for DeleteDesire only |
+ * | Write status | Remote Applier |
+ * | Delete desire | Adapter, sweeper |
  *
  * Other calls return 403. Errors are RFC 9457 problem details with a
  * `HYPERFLEET-CAT-NUM` code. Do not retry 400, 401, 403, or 422 unchanged.
@@ -28,10 +29,14 @@ using OpenAPI;
  * timeouts, and network failures with capped exponential backoff and jitter,
  * and wait for `Retry-After` on 429.
  *
- * **v1 compatibility.** Supported v1 Appliers keep working when the API is
- * deployed independently. Only optional additive fields can change within
- * v1. Changes to required fields, operation behavior, authorization,
- * compare-and-swap, or idempotency need a new API version.
+ * **v1 compatibility.**
+ *
+ * - Supported v1 Appliers must continue working when the API is deployed
+ *   independently.
+ * - Operation behavior and authorization rules remain stable in v1.
+ * - Optional additive request and response fields are compatible within v1.
+ * - Changes to required fields, operation behavior, authorization,
+ *   compare-and-swap, or idempotency require a new API version.
  */
 @service(#{ title: "HyperFleet Desire Store API" })
 @info(#{

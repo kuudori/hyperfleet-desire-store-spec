@@ -35,11 +35,7 @@ model ValidationError {
   message: string;
 }
 
-/**
- * Members shared by every RFC 9457 problem response of the Desire Store API.
- * Each problem model adds its own `code`, because a 409 constrains it to the
- * four conflict codes.
- */
+/** Members shared by every RFC 9457 problem response of the Desire Store API. */
 alias ProblemBase = {
   /** URI reference that identifies the problem type, in the form `https://api.hyperfleet.io/errors/{problem-type}`. */
   @format("uri")
@@ -65,14 +61,6 @@ alias ProblemBase = {
   /** Distributed trace ID for correlating the response with server logs. */
   trace_id?: string;
 };
-
-/** The cause of a 409 response. `ConflictProblem` lists each code. */
-union ConflictCode {
-  AlreadyExists: "HYPERFLEET-CNF-001",
-  VersionConflict: "HYPERFLEET-CNF-002",
-  DeletePending: "HYPERFLEET-CNF-003",
-  OwnerConflict: "HYPERFLEET-CNF-004",
-}
 
 /**
  * RFC 9457 problem details for a 409 response. Each cause has its own `code`,
@@ -107,9 +95,11 @@ union ConflictCode {
 model ConflictProblem {
   ...ProblemBase;
 
-  // No property doc. With one, TypeSpec emits `allOf` and oapi-codegen v2.7.2
-  // generates an anonymous struct around `ConflictCode`.
-  code: ConflictCode;
+  /**
+   * Machine-readable error code in `HYPERFLEET-CAT-NUM` format. The
+   * `ConflictProblem` description lists the codes for a 409.
+   */
+  code: string;
 
   /** The version the request carried. Present on `HYPERFLEET-CNF-002`. */
   expected_version?: int64;
@@ -165,7 +155,7 @@ model UnauthorizedProblem {
   status: 403,
   detail: "The caller class is not permitted to write desired state.",
   instance: "/api/hyperfleet/desire-store/v1/partitions/mc-01/desires/apply:apps:deployments:kube-system:coredns",
-  code: "HYPERFLEET-AUZ-003",
+  code: "HYPERFLEET-AUZ-001",
   timestamp: "2026-10-19T10:30:45.000Z",
   trace_id: "4bf92f3577b34da6a3ce929d0e0e4738",
 })
@@ -269,7 +259,7 @@ model ServiceUnavailableProblem {
   code?: string;
 }
 
-@doc("Malformed request: invalid identifier encoding, query parameters, or JSON; a missing or non-integer `version` on a delete or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.")
+@doc("Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.")
 model BadRequestResponse {
   @statusCode statusCode: 400;
   @header contentType: "application/problem+json";
@@ -277,7 +267,7 @@ model BadRequestResponse {
 }
 
 @doc("""
-  The credential is missing, invalid, or expired. The body can be absent, so a client must not require an Error Model body on a 401.
+  The credential is missing, invalid, or expired. A 401 from the API has this body. A 401 from the gateway has no body.
   """)
 model UnauthorizedResponse {
   @statusCode statusCode: 401;
@@ -286,7 +276,7 @@ model UnauthorizedResponse {
 }
 
 @doc("""
-  The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. The body can be absent, so a client must not require an Error Model body on a 403.
+  The caller class is not permitted for the operation, or the path partition is outside the caller's authorization. A 403 from the API has this body. A 403 from the gateway has no body.
   """)
 model ForbiddenResponse {
   @statusCode statusCode: 403;
@@ -338,4 +328,22 @@ model ServiceUnavailableResponse {
   @statusCode statusCode: 503;
   @header contentType: "application/problem+json";
   @body body: ServiceUnavailableProblem;
+}
+
+/** Problem body for a status code that an operation does not list. */
+model ProblemDetails {
+  ...ProblemBase;
+
+  /** Machine-readable error code in `HYPERFLEET-CAT-NUM` format. */
+  code?: string;
+
+  /** Field-level validation errors, present on validation failures. */
+  errors?: ValidationError[];
+}
+
+@doc("An unexpected error response.")
+@error
+model DefaultProblemResponse {
+  @header contentType: "application/problem+json";
+  @body body: ProblemDetails;
 }
