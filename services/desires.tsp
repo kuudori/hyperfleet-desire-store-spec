@@ -154,8 +154,11 @@ interface Desires {
    * **Owner.** All desires for one Kubernetes object in one partition have the
    * same `owner`: the caller that created the first of them. While one of them
    * exists, a create, write, or delete by a different caller returns 409
-   * `HYPERFLEET-CNF-004`. Only the sweeper is exempt from this check. A
-   * DeleteDesire that the sweeper creates is owned by the sweeper. It is the
+   * `HYPERFLEET-CNF-004`. Only the sweeper is exempt from this check, but the
+   * exemption does not take effect until HYPERFLEET-1937 changes the shared
+   * store interface. Until then, the sweeper also gets `HYPERFLEET-CNF-004` on
+   * an object that a different caller owns. A DeleteDesire that the sweeper
+   * creates is owned by the sweeper. It is the
    * one exception to the single `owner`, until the Applier confirms the
    * deletion and the sweeper removes it.
    *
@@ -214,7 +217,8 @@ interface Desires {
    * Deletes a desire at its current version and returns 204. A stale version
    * returns 409 `HYPERFLEET-CNF-002`, a desire that a different caller owns
    * returns 409 `HYPERFLEET-CNF-004`, and an absent desire returns 404. Only
-   * the sweeper is exempt from the owner check. To remove an applied object,
+   * the sweeper is exempt from the owner check, and only after HYPERFLEET-1937
+   * (see the Write desire description). To remove an applied object,
    * the Adapter creates a DeleteDesire instead.
    *
    * **Timed-out delete recovery.** The client reads the desire:

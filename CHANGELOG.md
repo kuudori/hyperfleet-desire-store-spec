@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-13
+
+### Fixed
+
+- The `HYPERFLEET-CNF-001` client action depends on the desire type. ReadDesire and DeleteDesire have no update, so "read, then update" applied only to ApplyDesire (HYPERFLEET-1923)
+- The sweeper's owner exemption does not take effect until HYPERFLEET-1937 changes the shared store interface. Until then the sweeper gets `HYPERFLEET-CNF-004` on objects that a different caller owns (HYPERFLEET-1923)
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
@@ -29,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Go module `github.com/openshift-hyperfleet/hyperfleet-desire-store-spec` with the `schemas` package that embeds the generated contract
 - Service definition with the `/api/hyperfleet/desire-store/v1` route prefix and no operations yet
 
-[Unreleased]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/releases/tag/v0.1.0

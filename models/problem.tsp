@@ -70,7 +70,7 @@ alias ProblemBase = {
  * | Cause | Type | Code | Client action |
  * |-------|------|------|---------------|
  * | The version in a write, a status write, or a delete is not current | `version-conflict` | `HYPERFLEET-CNF-002` | Read the desire again. If the change is still necessary, retry with the current version |
- * | The caller creates a desire that it already has | `resource-conflict` | `HYPERFLEET-CNF-001` | Read the desire, then update it with its version |
+ * | The caller creates a desire that it already has | `resource-conflict` | `HYPERFLEET-CNF-001` | Depends on the type. ApplyDesire: read the desire, then update it with its version. DeleteDesire: the existing record already requests the delete, so treat the create as done. ReadDesire: read the desire. If its `target_version` differs, delete it with its version and create it again |
  * | The caller creates an ApplyDesire while the DeleteDesire for the object is not confirmed | `resource-conflict` | `HYPERFLEET-CNF-003` | Retry after the Applier confirms the delete. The store then replaces the DeleteDesire with the new ApplyDesire |
  * | A different caller owns the object | `resource-conflict` | `HYPERFLEET-CNF-004` | Do not retry. No request from this caller changes the `owner` |
  *
