@@ -40,8 +40,9 @@ enum DesireType {
 scalar DesireId extends string;
 
 /**
- * The fields that List returns for each desire: the identity fields and the
- * version. `type` is the kind of desire.
+ * The fields that List returns for each desire: the identity fields, the
+ * version, and, on a ReadDesire, `target_version`. `type` is the kind of
+ * desire.
  */
 model DesireReference {
   // No property doc on `type`. With one, TypeSpec emits `allOf` and
@@ -68,6 +69,15 @@ model DesireReference {
    */
   @minValue(1)
   version: int64;
+
+  /**
+   * The Kubernetes API version to read the object as, for example `v1`.
+   * Present on a ReadDesire. A List reference carries it so that the Applier
+   * can watch the object at this version without a Get of every ReadDesire.
+   * A recreated ReadDesire keeps its identity and `version`, so a changed
+   * target version shows only here.
+   */
+  target_version?: string;
 }
 
 /**
@@ -107,12 +117,6 @@ model Desire {
    * identity must match the path.
    */
   kubeContent?: Record<unknown>;
-
-  /**
-   * The Kubernetes API version to read the object as, for example `v1`.
-   * Present on a ReadDesire.
-   */
-  target_version?: string;
 
   /**
    * The status that the Applier wrote. It holds Kubernetes conditions in
