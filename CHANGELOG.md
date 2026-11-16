@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-11-13
 
+### Added
+
+- `target_version` on `DesireReference`: List returns it on ReadDesire references, so the Applier can watch the object at that version without a Get of every ReadDesire. The field is optional, so the change is additive within v1 (HYPERFLEET-1923)
+
 ### Fixed
 
 - The `HYPERFLEET-CNF-001` client action depends on the desire type. ReadDesire and DeleteDesire have no update, so "read, then update" applied only to ApplyDesire (HYPERFLEET-1923)
