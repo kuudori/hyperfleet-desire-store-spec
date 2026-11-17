@@ -40,7 +40,7 @@ using OpenAPI;
  */
 @service(#{ title: "HyperFleet Desire Store API" })
 @info(#{
-  version: "0.2.1",
+  version: "0.2.2",
   contact: #{
     name: "HyperFleet Team",
     url: "https://github.com/openshift-hyperfleet",

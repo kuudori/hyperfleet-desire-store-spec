@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-17
+
+### Changed
+
+- `resource_id` and `target_version` on `DesireWrite` declare `minLength: 1`. The API already rejects empty values. The wire format does not change, except that the contract now declares an empty `resource_id` or `target_version` invalid. The 400 response description lists an empty `resource_id` and an empty `target_version` on a write (HYPERFLEET-1825)
+
 ## [0.2.1] - 2026-11-13
 
 ### Added
@@ -40,7 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Go module `github.com/openshift-hyperfleet/hyperfleet-desire-store-spec` with the `schemas` package that embeds the generated contract
 - Service definition with the `/api/hyperfleet/desire-store/v1` route prefix and no operations yet
 
-[Unreleased]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/releases/tag/v0.1.0

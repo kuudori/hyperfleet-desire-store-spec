@@ -166,6 +166,7 @@ model DesireWrite {
    * The HyperFleet API resource that the desire comes from, for example
    * `clusters/cls-123`.
    */
+  @minLength(1)
   resource_id: string;
 
   /**
@@ -183,6 +184,7 @@ model DesireWrite {
    * The Kubernetes API version to read the object as, for example `v1`.
    * Required for a ReadDesire.
    */
+  @minLength(1)
   target_version?: string;
 }
 
