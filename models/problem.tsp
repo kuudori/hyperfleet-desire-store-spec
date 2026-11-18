@@ -259,7 +259,7 @@ model ServiceUnavailableProblem {
   code?: string;
 }
 
-@doc("Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.")
+@doc("Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; an empty `resource_id` on a write; `target_version` missing on a ReadDesire write; an empty `target_version` on a write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.")
 model BadRequestResponse {
   @statusCode statusCode: 400;
   @header contentType: "application/problem+json";

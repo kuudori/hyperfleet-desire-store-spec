@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: HyperFleet Desire Store API
-  version: 0.2.1
+  version: 0.2.2
   contact:
     name: HyperFleet Team
     url: https://github.com/openshift-hyperfleet
@@ -88,7 +88,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DesireList'
         '400':
-          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; an empty `resource_id` on a write; `target_version` missing on a ReadDesire write; an empty `target_version` on a write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
           content:
             application/problem+json:
               schema:
@@ -196,7 +196,7 @@ paths:
                     generation: 2
                     version: 3
         '400':
-          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; an empty `resource_id` on a write; `target_version` missing on a ReadDesire write; an empty `target_version` on a write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
           content:
             application/problem+json:
               schema:
@@ -305,7 +305,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Desire'
         '400':
-          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; an empty `resource_id` on a write; `target_version` missing on a ReadDesire write; an empty `target_version` on a write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
           content:
             application/problem+json:
               schema:
@@ -419,7 +419,7 @@ paths:
         '204':
           description: Success, with no body.
         '400':
-          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; an empty `resource_id` on a write; `target_version` missing on a ReadDesire write; an empty `target_version` on a write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
           content:
             application/problem+json:
               schema:
@@ -511,7 +511,7 @@ paths:
         '204':
           description: Success, with no body.
         '400':
-          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; `target_version` missing on a ReadDesire write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
+          description: 'Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an ApplyDesire or DeleteDesire status write; `owner` in a write body; an empty `resource_id` on a write; `target_version` missing on a ReadDesire write; an empty `target_version` on a write; `kubeContent` missing on an ApplyDesire write; `kubeContent` on a ReadDesire or DeleteDesire write; a non-zero `version` on a ReadDesire or DeleteDesire write.'
           content:
             application/problem+json:
               schema:
@@ -922,6 +922,7 @@ components:
       properties:
         resource_id:
           type: string
+          minLength: 1
           description: |-
             The HyperFleet API resource that the desire comes from, for example
             `clusters/cls-123`.
@@ -939,6 +940,7 @@ components:
           description: The rendered Kubernetes manifest. Required for an ApplyDesire.
         target_version:
           type: string
+          minLength: 1
           description: |-
             The Kubernetes API version to read the object as, for example `v1`.
             Required for a ReadDesire.
